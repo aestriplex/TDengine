@@ -88,6 +88,11 @@ void streamQueueClose(SStreamQueue* pQueue, int32_t taskId) {
   taosCloseQueue(pQueue->pQueue);
   pQueue->pQueue = NULL;
 
+  if (pQueue->qChkptItem != NULL) {
+    taosMemFree(pQueue->qChkptItem);
+    pQueue->qChkptItem = NULL;
+  }
+
   taosCloseQueue(pQueue->pChkptQueue);
   pQueue->pChkptQueue = NULL;
 
