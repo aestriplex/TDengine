@@ -88,8 +88,9 @@ void streamQueueClose(SStreamQueue* pQueue, int32_t taskId) {
   taosCloseQueue(pQueue->pQueue);
   pQueue->pQueue = NULL;
 
-  if (pQueue->qChkptItem != NULL) {
+  if (pQueue->qChkptItem != NULL && pQueue->status == STREAM_QUEUE__CHKPTFAILED) {
     taosFreeQitem(pQueue->qChkptItem);
+    pQueue->status = STREAM_QUEUE__SUCESS;
     pQueue->qChkptItem = NULL;
   }
 
