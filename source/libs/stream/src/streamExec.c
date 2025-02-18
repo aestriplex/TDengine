@@ -777,7 +777,8 @@ static int32_t doStreamExecTask(SStreamTask* pTask) {
   int32_t     code = 0;
 
   // merge multiple input data if possible in the input queue.
-  stDebug("s-task:%s start to extract data block from inputQ", id);
+  int64_t st = taosGetTimestampMs();
+  stDebug("s-task:%s start to extract data block from inputQ, start ts:%" PRId64, id, st);
 
   while (1) {
     int32_t           blockSize = 0;
@@ -806,8 +807,6 @@ static int32_t doStreamExecTask(SStreamTask* pTask) {
       streamTaskSetIdleInfo(pTask, MIN_INVOKE_INTERVAL);
       return 0;
     }
-
-    int64_t st = taosGetTimestampMs();
 
     EExtractDataCode ret = streamTaskGetDataFromInputQ(pTask, &pInput, &numOfBlocks, &blockSize);
     if (ret == EXEC_AFTER_IDLE) {
@@ -875,8 +874,8 @@ static int32_t doStreamExecTask(SStreamTask* pTask) {
       }
 
       double el = (taosGetTimestampMs() - st) / 1000.0;
-      if (el > 2.0) {  // elapsed more than 5 sec, not occupy the CPU anymore
-        stDebug("s-task:%s occupy more than 5.0s, release the exec threads and idle for 500ms", id);
+      if (el >= 2.0) {  // elapsed more than 2.0 sec, not occupy the CPU anymore
+        stDebug("s-task:%s occupy more than 2.0s, release the exec threads and idle for 500ms", id);
         streamTaskSetIdleInfo(pTask, 500);
         return code;
       }
