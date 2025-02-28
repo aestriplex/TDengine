@@ -573,6 +573,7 @@ typedef enum EStreamNotifyOptionSetFlag {
 } EStreamNotifyOptionSetFlag;
 
 typedef enum EStreamNotifyEventType {
+  SNOTIFY_EVENT_WINDOW_INVALIDATION = 0,
   SNOTIFY_EVENT_WINDOW_OPEN = BIT_FLAG_MASK(0),
   SNOTIFY_EVENT_WINDOW_CLOSE = BIT_FLAG_MASK(1),
 } EStreamNotifyEventType;
@@ -681,6 +682,10 @@ typedef SGrantStmt SRevokeStmt;
 typedef struct SBalanceVgroupStmt {
   ENodeType type;
 } SBalanceVgroupStmt;
+
+typedef struct SAssignLeaderStmt {
+  ENodeType type;
+} SAssignLeaderStmt;
 
 typedef struct SBalanceVgroupLeaderStmt {
   ENodeType type;

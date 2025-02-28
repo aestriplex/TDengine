@@ -378,7 +378,11 @@ int32_t metaTbCursorPrev(SMTbCursor *pTbCur, ETableType jumpTableType) {
   return 0;
 }
 
+<<<<<<< HEAD
 SSchemaWrapper *metaGetTableSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock, int64_t *createTime, SExtSchema** extSchema) {
+=======
+SSchemaWrapper *metaGetTableSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock) {
+>>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
   void           *pData = NULL;
   int             nData = 0;
   int64_t         version;
@@ -415,9 +419,6 @@ _query:
     }
   } else if (me.type == TSDB_CHILD_TABLE) {
     uid = me.ctbEntry.suid;
-    if (createTime != NULL){
-      *createTime = me.ctbEntry.btime;
-    }
     tDecoderClear(&dc);
     goto _query;
   } else {
@@ -456,6 +457,46 @@ _err:
   }
   tdbFree(pData);
   return NULL;
+}
+
+int64_t metaGetTableCreateTime(SMeta *pMeta, tb_uid_t uid, int lock) {
+  void           *pData = NULL;
+  int             nData = 0;
+  int64_t         version = 0;
+  SDecoder        dc = {0};
+  int64_t         createTime = INT64_MAX;
+  if (lock) {
+    metaRLock(pMeta);
+  }
+
+  if (tdbTbGet(pMeta->pUidIdx, &uid, sizeof(uid), &pData, &nData) < 0) {
+    goto _exit;
+  }
+
+  version = ((SUidIdxVal *)pData)[0].version;
+
+  if (tdbTbGet(pMeta->pTbDb, &(STbDbKey){.uid = uid, .version = version}, sizeof(STbDbKey), &pData, &nData) != 0) {
+    goto _exit;
+  }
+
+  SMetaEntry me = {0};
+  tDecoderInit(&dc, pData, nData);
+  int32_t code = metaDecodeEntry(&dc, &me);
+  if (code) {
+    tDecoderClear(&dc);
+    goto _exit;
+  }
+  if (me.type == TSDB_CHILD_TABLE) {
+    createTime = me.ctbEntry.btime;
+  }
+  tDecoderClear(&dc);
+
+  _exit:
+  if (lock) {
+    metaULock(pMeta);
+  }
+  tdbFree(pData);
+  return createTime;
 }
 
 SMCtbCursor *metaOpenCtbCursor(void *pVnode, tb_uid_t uid, int lock) {
@@ -630,7 +671,11 @@ STSchema *metaGetTbTSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock) {
   STSchema       *pTSchema = NULL;
   SSchemaWrapper *pSW = NULL;
 
+<<<<<<< HEAD
   pSW = metaGetTableSchema(pMeta, uid, sver, lock, NULL, NULL);
+=======
+  pSW = metaGetTableSchema(pMeta, uid, sver, lock);
+>>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
   if (!pSW) return NULL;
 
   pTSchema = tBuildTSchema(pSW->pSchema, pSW->nCols, pSW->version);

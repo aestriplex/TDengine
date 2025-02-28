@@ -537,6 +537,8 @@ _exit:
 
 int32_t vnodeGetLoad(SVnode *pVnode, SVnodeLoad *pLoad) {
   SSyncState state = syncGetState(pVnode->sync);
+  pLoad->syncAppliedIndex = pVnode->state.applied;
+  syncGetCommitIndex(pVnode->sync, &pLoad->syncCommitIndex);
 
   pLoad->vgId = TD_VID(pVnode);
   pLoad->syncState = state.state;
@@ -746,7 +748,11 @@ int32_t vnodeGetCtbNum(SVnode *pVnode, int64_t suid, int64_t *num) {
 }
 
 int32_t vnodeGetStbColumnNum(SVnode *pVnode, tb_uid_t suid, int *num) {
+<<<<<<< HEAD
   SSchemaWrapper *pSW = metaGetTableSchema(pVnode->pMeta, suid, -1, 0, NULL, NULL);
+=======
+  SSchemaWrapper *pSW = metaGetTableSchema(pVnode->pMeta, suid, -1, 0);
+>>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
   if (pSW) {
     *num = pSW->nCols;
     tDeleteSchemaWrapper(pSW);
