@@ -211,6 +211,7 @@ typedef struct STableInfoForChildTable {
   char*           tableName;
   SSchemaWrapper* schemaRow;
   SSchemaWrapper* tagRow;
+  SExtSchema*     pExtSchemas;
 } STableInfoForChildTable;
 
 static void destroySTableInfoForChildTable(void* data) {
@@ -218,6 +219,7 @@ static void destroySTableInfoForChildTable(void* data) {
   taosMemoryFree(pData->tableName);
   tDeleteSchemaWrapper(pData->schemaRow);
   tDeleteSchemaWrapper(pData->tagRow);
+  taosMemoryFree(pData->pExtSchemas);
 }
 
 static int32_t MoveToSnapShotVersion(SSnapContext* ctx) {
@@ -288,6 +290,11 @@ static int32_t saveSuperTableInfoForChildTable(SMetaEntry* me, SHashObj* suidInf
   }
   dataTmp.tagRow = tCloneSSchemaWrapper(&me->stbEntry.schemaTag);
   if (dataTmp.tagRow == NULL) {
+    code = TSDB_CODE_OUT_OF_MEMORY;
+    goto END;
+  }
+  dataTmp.pExtSchemas = metaGetSExtSchema(me);
+  if (dataTmp.pExtSchemas == NULL) {
     code = TSDB_CODE_OUT_OF_MEMORY;
     goto END;
   }
@@ -548,11 +555,7 @@ int32_t setForSnapShot(SSnapContext* ctx, int64_t uid) {
 
 void taosXSetTablePrimaryKey(SSnapContext* ctx, int64_t uid) {
   bool            ret = false;
-<<<<<<< HEAD
-  SSchemaWrapper* schema = metaGetTableSchema(ctx->pMeta, uid, -1, 1, NULL, NULL);
-=======
-  SSchemaWrapper* schema = metaGetTableSchema(ctx->pMeta, uid, -1, 1);
->>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
+  SSchemaWrapper* schema = metaGetTableSchema(ctx->pMeta, uid, -1, 1, NULL);
   if (schema && schema->nCols >= 2 && schema->pSchema[1].flags & COL_IS_KEY) {
     ret = true;
   }
@@ -763,9 +766,11 @@ int32_t getMetaTableInfoFromSnapshot(SSnapContext* ctx, SMetaTableInfo* result) 
       }
       result->suid = me.ctbEntry.suid;
       result->schema = tCloneSSchemaWrapper(data->schemaRow);
+      result->pExtSchemas = metaCloneSExtSchema(data->pExtSchemas, data->schemaRow->nCols);
     } else if (ctx->subType == TOPIC_SUB_TYPE__DB && me.type == TSDB_NORMAL_TABLE) {
       result->suid = 0;
       result->schema = tCloneSSchemaWrapper(&me.ntbEntry.schemaRow);
+      result->pExtSchemas = metaGetSExtSchema(&me);
     } else {
       metaDebug("tmqsnap get uid continue");
       tDecoderClear(&dc);

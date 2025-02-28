@@ -378,11 +378,7 @@ int32_t metaTbCursorPrev(SMTbCursor *pTbCur, ETableType jumpTableType) {
   return 0;
 }
 
-<<<<<<< HEAD
-SSchemaWrapper *metaGetTableSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock, int64_t *createTime, SExtSchema** extSchema) {
-=======
-SSchemaWrapper *metaGetTableSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock) {
->>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
+SSchemaWrapper *metaGetTableSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock, SExtSchema** extSchema) {
   void           *pData = NULL;
   int             nData = 0;
   int64_t         version;
@@ -413,7 +409,7 @@ _query:
   if (me.type == TSDB_SUPER_TABLE) {
     if (sver == -1 || sver == me.stbEntry.schemaRow.version) {
       pSchema = tCloneSSchemaWrapper(&me.stbEntry.schemaRow);
-      if (extSchema != NULL) *extSchema = metaCloneSExtSchema(&me);
+      if (extSchema != NULL) *extSchema = metaGetSExtSchema(&me);
       tDecoderClear(&dc);
       goto _exit;
     }
@@ -424,7 +420,7 @@ _query:
   } else {
     if (sver == -1 || sver == me.ntbEntry.schemaRow.version) {
       pSchema = tCloneSSchemaWrapper(&me.ntbEntry.schemaRow);
-      if (extSchema != NULL) *extSchema = metaCloneSExtSchema(&me);
+      if (extSchema != NULL) *extSchema = metaGetSExtSchema(&me);
       tDecoderClear(&dc);
       goto _exit;
     }
@@ -441,7 +437,7 @@ _query:
     goto _err;
   }
   pSchema = tCloneSSchemaWrapper(&schema);
-  if (extSchema != NULL) *extSchema = metaCloneSExtSchema(&me);
+  if (extSchema != NULL) *extSchema = metaGetSExtSchema(&me);
   tDecoderClear(&dc);
 
 _exit:
@@ -671,11 +667,7 @@ STSchema *metaGetTbTSchema(SMeta *pMeta, tb_uid_t uid, int32_t sver, int lock) {
   STSchema       *pTSchema = NULL;
   SSchemaWrapper *pSW = NULL;
 
-<<<<<<< HEAD
-  pSW = metaGetTableSchema(pMeta, uid, sver, lock, NULL, NULL);
-=======
-  pSW = metaGetTableSchema(pMeta, uid, sver, lock);
->>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1
+  pSW = metaGetTableSchema(pMeta, uid, sver, lock, NULL);
   if (!pSW) return NULL;
 
   pTSchema = tBuildTSchema(pSW->pSchema, pSW->nCols, pSW->version);
