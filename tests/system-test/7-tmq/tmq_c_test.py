@@ -35,9 +35,7 @@ class TDTestCase:
         cmdStr = '%s/build/bin/tmq_write_raw_test'%(buildPath)
         tdLog.info(cmdStr)
         os.system(cmdStr)
-<<<<<<< HEAD:tests/system-test/7-tmq/tmq_ts-5473.py
         self.checkData()
-=======
 
         cmdStr = '%s/build/bin/tmq_ts5776'%(buildPath)
         tdLog.info(cmdStr)
@@ -47,7 +45,6 @@ class TDTestCase:
         tdLog.info(cmdStr)
         os.system(cmdStr)
 
->>>>>>> 5d777f9bcfc2ba4f9bbc90d598fc302329bb88e1:tests/system-test/7-tmq/tmq_c_test.py
         return
 
     def stop(self):
