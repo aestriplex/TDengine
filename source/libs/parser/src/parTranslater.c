@@ -13657,7 +13657,7 @@ static int32_t extractQueryResultSchema(const SNodeList* pProjections, int32_t* 
     return terrno;
   }
   if (ppExtSchemas) *ppExtSchemas = taosMemoryCalloc(*numOfCols, sizeof(SExtSchema));
-  if (!ppExtSchemas) {
+  if (ppExtSchemas && *ppExtSchemas == NULL) {
     taosMemoryFreeClear(*pSchema);
     return terrno;
   }
