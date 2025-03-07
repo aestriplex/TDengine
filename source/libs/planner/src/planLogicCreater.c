@@ -946,6 +946,7 @@ static int32_t createVirtualTableLogicNode(SLogicPlanContext* pCxt, SSelectStmt*
     pDynCtrl->qType = DYN_QTYPE_VTB_SCAN;
     pDynCtrl->node.pChildren = NULL;
     pDynCtrl->node.pTargets = NULL;
+    pDynCtrl->vtbScan.suid = pVtableScan->stableId;
     pVtableScan->node.dynamicOp = true;
     PLAN_ERR_JRET(nodesMakeList(&pDynCtrl->node.pChildren));
     PLAN_ERR_JRET(nodesListStrictAppend(pDynCtrl->node.pChildren, (SNode*)pVtableScan));

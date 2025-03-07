@@ -332,6 +332,10 @@ bool applyLimitOffset(SLimitInfo* pLimitInfo, SSDataBlock* pBlock, SExecTaskInfo
   return false;
 }
 
+static bool isDynVtbScan(SOperatorInfo* pOperator) {
+  return ((STableScanOperatorParam*)pOperator->pOperatorGetParam->value)->isVtbRefScan;
+}
+
 static int32_t loadDataBlock(SOperatorInfo* pOperator, STableScanBase* pTableScanInfo, SSDataBlock* pBlock,
                              uint32_t* status) {
   int32_t        code = TSDB_CODE_SUCCESS;
@@ -474,9 +478,12 @@ static int32_t loadDataBlock(SOperatorInfo* pOperator, STableScanBase* pTableSca
     return code;
   }
 
-  code = doSetTagColumnData(pTableScanInfo, pBlock, pTaskInfo, pBlock->info.rows);
-  if (code) {
-    return code;
+  if (!((STableScanInfo *)pOperator->info)->ignoreTag) {
+    // dyn vtb scan do not read tag from origin tables.
+    code = doSetTagColumnData(pTableScanInfo, pBlock, pTaskInfo, pBlock->info.rows);
+    if (code) {
+      return code;
+    }
   }
 
   // restore the previous value
@@ -1183,6 +1190,114 @@ static int32_t createTableListInfoFromParam(SOperatorInfo* pOperator) {
   return code;
 }
 
+static int32_t createVscanTableListInfoFromParam(SOperatorInfo* pOperator) {
+  STableScanInfo*          pInfo = pOperator->info;
+  SExecTaskInfo*           pTaskInfo = pOperator->pTaskInfo;
+  int32_t                  code = 0;
+  int32_t                  lino = 0;
+  STableListInfo*          pListInfo = pInfo->base.pTableListInfo;
+  uint64_t                 pUid = 0;
+  STableScanOperatorParam* pParam = (STableScanOperatorParam*)pOperator->pOperatorGetParam->value;
+  SStorageAPI*             pAPI = &pTaskInfo->storageAPI;
+  STbNameColMap*           name = pParam->pColMap;
+  SMetaReader              orgTable = {0};
+  SMetaReader              superTable = {0};
+  SSchemaWrapper*          schema = NULL;
+
+  if (!pParam->isVtbRefScan) {
+    qError("wrong param type");
+    return TSDB_CODE_INVALID_PARA;
+  }
+
+  cleanupQueryTableDataCond(&pInfo->base.cond);
+  if (pAPI->tsdReader.tsdReaderClose) {
+    pAPI->tsdReader.tsdReaderClose(pInfo->base.dataReader);
+  }
+
+  pAPI->metaReaderFn.initReader(&orgTable, pInfo->base.readHandle.vnode, META_READER_LOCK, &pAPI->metaFn);
+  char *tbName = strstr(name->tbName, ".");
+  QUERY_CHECK_CODE(code = pAPI->metaReaderFn.getTableEntryByName(&orgTable, tbName + 1), lino, _return);
+  if (!pParam->pUidList) {
+    pParam->pUidList = taosArrayInit(1, sizeof(uint64_t));
+  }
+  QUERY_CHECK_NULL(taosArrayPush(pParam->pUidList, &orgTable.me.uid), code, lino, _return, terrno);
+  pUid = orgTable.me.uid;
+
+  switch (orgTable.me.type) {
+    case TSDB_CHILD_TABLE:
+      pAPI->metaReaderFn.initReader(&superTable, pInfo->base.readHandle.vnode, META_READER_LOCK, &pAPI->metaFn);
+      QUERY_CHECK_CODE(pAPI->metaReaderFn.getTableEntryByUid(&superTable, orgTable.me.ctbEntry.suid), lino, _return);
+      schema = &superTable.me.stbEntry.schemaRow;
+      break;
+    case TSDB_NORMAL_TABLE:
+      schema = &orgTable.me.ntbEntry.schemaRow;
+      break;
+    default:
+      qError("invalid table type:%d", orgTable.me.type);
+      return TSDB_CODE_INVALID_PARA;
+      break;
+  }
+
+  SArray   *pColArray = taosArrayInit(schema->nCols, sizeof(SColIdPair));
+  SColIdPair  tsPair = {.vtbColId = PRIMARYKEY_TIMESTAMP_COL_ID, .orgColId = PRIMARYKEY_TIMESTAMP_COL_ID};
+  QUERY_CHECK_NULL(taosArrayPush(pColArray, &tsPair), code, lino, _return, terrno);
+  for (int32_t i = 0; i < taosArrayGetSize(pParam->pColMap->colMap); ++i) {
+    SColIdNameKV *kv = taosArrayGet(pParam->pColMap->colMap, i);
+    for (int32_t j = 0; j < schema->nCols; j++) {
+      if (strncmp(kv->colName, schema->pSchema[j].name, strlen(schema->pSchema[j].name)) == 0) {
+        SColIdPair pPair = {.vtbColId = kv->colId, .orgColId = j + 1};
+        QUERY_CHECK_NULL(taosArrayPush(pColArray, &pPair), code, lino, _return, terrno);
+        break;
+      }
+    }
+  }
+
+  SArray *pBlockColArray = taosArrayInit(schema->nCols, sizeof(int32_t));
+  for (int32_t i = 0; i < taosArrayGetSize(pColArray); i++) {
+    SColIdPair *pPair = (SColIdPair*)taosArrayGet(pColArray, i);
+    for (int32_t j = 0; j < taosArrayGetSize(pInfo->base.matchInfo.pList); j++) {
+      SColMatchItem *pItem = taosArrayGet(pInfo->base.matchInfo.pList, j);
+      if (pItem->colId == pPair->vtbColId) {
+        SColIdPair tmpPair = {.orgColId = pPair->orgColId, .vtbColId = pItem->dstSlotId};
+        QUERY_CHECK_NULL(taosArrayPush(pBlockColArray, &tmpPair), code, lino, _return, terrno);
+        break;
+      }
+    }
+  }
+
+  QUERY_CHECK_CODE(createOneDataBlockWithColArray(pInfo->pOrgBlock, &pInfo->pResBlock, pBlockColArray), lino, _return);
+  QUERY_CHECK_CODE(initQueryTableDataCondByCond(&pInfo->base.cond, &pInfo->base.orgCond, &pInfo->base.readHandle, pColArray), lino, _return);
+  pInfo->base.cond.twindows.skey = pParam->window.ekey + 1;
+  pInfo->base.cond.suid = orgTable.me.type == TSDB_CHILD_TABLE ? superTable.me.uid : 0;
+
+  pAPI->metaReaderFn.clearReader(&superTable);
+  pAPI->metaReaderFn.clearReader(&orgTable);
+
+
+  pListInfo->oneTableForEachGroup = true;
+  if (taosArrayGetSize(pListInfo->pTableList) > 0) {
+    taosHashClear(pListInfo->map);
+    taosArrayClear(pListInfo->pTableList);
+    pOperator->status = OP_OPENED;
+  }
+
+  STableKeyInfo info = {.groupId = 0};
+  int32_t       tableIdx = 0;
+
+  if (taosHashPut(pListInfo->map, &pUid, sizeof(uint64_t), &tableIdx, sizeof(int32_t))) {
+    return terrno;
+  }
+  info.uid = pUid;
+  void* p = taosArrayPush(pListInfo->pTableList, &info);
+  if (p == NULL) {
+    return terrno;
+  }
+  qDebug("add dynamic table scan uid:%" PRIu64 ", %s", info.uid, GET_TASKID(pTaskInfo));
+
+_return:
+  return code;
+}
+
 static int32_t startNextGroupScan(SOperatorInfo* pOperator, SSDataBlock** pResult) {
   int32_t         code = TSDB_CODE_SUCCESS;
   int32_t         lino = 0;
@@ -1332,27 +1447,67 @@ static int32_t doTableScanNext(SOperatorInfo* pOperator, SSDataBlock** ppRes) {
   STableScanInfo* pInfo = pOperator->info;
   SExecTaskInfo*  pTaskInfo = pOperator->pTaskInfo;
   SStorageAPI*    pAPI = &pTaskInfo->storageAPI;
+  int32_t         num = 0;
+  STableKeyInfo*  pList = NULL;
   QRY_PARAM_CHECK(ppRes);
 
   if (pOperator->pOperatorGetParam) {
     pOperator->dynamicTask = true;
-    code = createTableListInfoFromParam(pOperator);
-    freeOperatorParam(pOperator->pOperatorGetParam, OP_GET_PARAM);
-    pOperator->pOperatorGetParam = NULL;
-    QUERY_CHECK_CODE(code, lino, _end);
+    if (isDynVtbScan(pOperator)) {
+      code = createVscanTableListInfoFromParam(pOperator);
 
-    if (pOperator->status == OP_EXEC_DONE) {
-      pInfo->currentGroupId = -1;
-      pOperator->status = OP_OPENED;
+      freeOperatorParam(pOperator->pOperatorGetParam, OP_GET_PARAM);
+      pOperator->pOperatorGetParam = NULL;
+      QUERY_CHECK_CODE(code, lino, _end);
+
+      pInfo->currentGroupId = 0;
+      pInfo->base.dataReader = NULL;
+      pInfo->ignoreTag = true;
+      taosRLockLatch(&pTaskInfo->lock);
+      code = doInitReader(pInfo, pTaskInfo, pAPI, &num, &pList);
+      taosRUnLockLatch(&pTaskInfo->lock);
+      QUERY_CHECK_CODE(code, lino, _end);
+
+      if (pInfo->pResBlock->info.capacity > pOperator->resultInfo.capacity) {
+        pOperator->resultInfo.capacity = pInfo->pResBlock->info.capacity;
+      }
+
       SSDataBlock* result = NULL;
 
+      pInfo->currentGroupId = -1;
       while (true) {
         code = startNextGroupScan(pOperator, &result);
         QUERY_CHECK_CODE(code, lino, _end);
 
         if (result || pOperator->status == OP_EXEC_DONE) {
-          (*ppRes) = result;
+          SSDataBlock* res = NULL;
+          if (result) {
+            createOneDataBlockWithTwoBlock(result, pInfo->pOrgBlock, &res);
+          }
+          (*ppRes) = res;
           return code;
+        }
+      }
+
+    } else {
+      code = createTableListInfoFromParam(pOperator);
+      freeOperatorParam(pOperator->pOperatorGetParam, OP_GET_PARAM);
+      pOperator->pOperatorGetParam = NULL;
+      QUERY_CHECK_CODE(code, lino, _end);
+
+      if (pOperator->status == OP_EXEC_DONE) {
+        pInfo->currentGroupId = -1;
+        pOperator->status = OP_OPENED;
+        SSDataBlock* result = NULL;
+
+        while (true) {
+          code = startNextGroupScan(pOperator, &result);
+          QUERY_CHECK_CODE(code, lino, _end);
+
+          if (result || pOperator->status == OP_EXEC_DONE) {
+            (*ppRes) = result;
+            return code;
+          }
         }
       }
     }
@@ -1527,6 +1682,11 @@ int32_t createTableScanOperatorInfo(STableScanPhysiNode* pTableScanNode, SReadHa
   pInfo->pResBlock = createDataBlockFromDescNode(pDescNode);
   resetClolumnReserve(pInfo->pResBlock, pInfo->base.dataBlockLoadFlag);
   QUERY_CHECK_NULL(pInfo->pResBlock, code, lino, _error, terrno);
+  if (pScanNode->node.dynamicOp) {
+    TSWAP(pInfo->pOrgBlock, pInfo->pResBlock);
+    memcpy(&pInfo->base.orgCond, &pInfo->base.cond, sizeof(SQueryTableDataCond));
+    memset(&pInfo->base.cond, 0, sizeof(SQueryTableDataCond));
+  }
 
   code = prepareDataBlockBuf(pInfo->pResBlock, &pInfo->base.matchInfo);
   QUERY_CHECK_CODE(code, lino, _error);

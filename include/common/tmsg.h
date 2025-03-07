@@ -616,16 +616,6 @@ typedef struct {
   SColRef*  pColRef;
 } SColRefWrapper;
 
-typedef struct {
-  int32_t vgId;
-  SColRef colRef;
-} SColRefEx;
-
-typedef struct {
-  int32_t     nCols;
-  SColRefEx*  pColRefEx;
-} SColRefExWrapper;
-
 struct SSchema {
   int8_t   type;
   int8_t   flags;
@@ -2895,12 +2885,37 @@ typedef struct SOperatorParam {
   int32_t downstreamIdx;
   void*   value;
   SArray* pChildren;  // SArray<SOperatorParam*>
+  bool    onlyRef;
 } SOperatorParam;
 
+typedef struct SColIdNameKV {
+  col_id_t colId;
+  char     colName[TSDB_COL_NAME_LEN];
+} SColIdNameKV;
+
+typedef struct SColIdPair {
+  col_id_t vtbColId;
+  col_id_t orgColId;
+} SColIdPair;
+
+typedef struct STbNameColMap {
+  int32_t   vgId;
+  char      tbName[TSDB_TABLE_FNAME_LEN];
+  SArray*   colMap;  // SArray<SColIdNameKV>
+} STbNameColMap;
+
 typedef struct STableScanOperatorParam {
-  bool    tableSeq;
-  SArray* pUidList;
+  bool           tableSeq;
+  bool           isVtbRefScan;
+  SArray*        pUidList;
+  STbNameColMap* pColMap;
+  STimeWindow    window;
 } STableScanOperatorParam;
+
+typedef struct SVTableScanOperatorParam {
+  uint64_t       uid;
+  SArray*        pOpParamArray;  // SArray<SOperatorParam>
+} SVTableScanOperatorParam;
 
 typedef struct {
   SMsgHead        header;
