@@ -1127,6 +1127,21 @@ taos> select repeat('abc',-1);
                   |
 ```
 
+#### CRC32
+
+```sql
+CRC32(string)
+```
+**Function Description**: Return the unsigned 32 bit integer that represents the Cyclic Redundancy Check (CRC).
+
+**Return Type**: UINT
+
+**Applicable Data Types**: VARCHAR
+
+**Nested Subquery Support**: Applicable to both inner and outer queries.
+
+**Applicable to**: Tables and supertables.
+
 ### Conversion Functions
 
 Conversion functions convert values from one data type to another.
