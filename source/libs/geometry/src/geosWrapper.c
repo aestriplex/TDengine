@@ -22,6 +22,40 @@ typedef char (*_geosRelationFunc_t)(GEOSContextHandle_t handle, const GEOSGeomet
 typedef char (*_geosPreparedRelationFunc_t)(GEOSContextHandle_t handle, const GEOSPreparedGeometry *pg1,
                                             const GEOSGeometry *g2);
 
+int32_t initTaosGeometry(TaosGeometry *geom, int srsCode) {
+  if (geom == NULL) {
+    return TSDB_CODE_FAILED;
+  }
+
+  *geom = (TaosGeometry) {
+    .geom = NULL,
+    .srs = implementedSrs + srsCode,
+  };
+
+  return TSDB_CODE_SUCCESS;
+}
+
+int32_t initTaosPreparedGeometry(TaosPreparedGeometry *geom, int srsCode) {
+  if (geom == NULL) {
+    return TSDB_CODE_FAILED;
+  }
+
+  *geom = (TaosPreparedGeometry) {
+    .geom = NULL,
+    .srs = implementedSrs + srsCode,
+  };
+
+  return TSDB_CODE_SUCCESS;
+}
+
+int32_t defaultUnitTaosGeometry(TaosGeometry *geom) {
+  return initTaosGeometry(geom, CARTESIAN_CODE);
+}
+
+int32_t defaultUnitTaosPreparedGeometry(TaosPreparedGeometry *geom) {
+  return initTaosPreparedGeometry(geom, CARTESIAN_CODE);
+}
+
 void geosFreeBuffer(void *buffer) {
   if (buffer) {
     SGeosContext *pCtx = acquireThreadLocalGeosCtx();
@@ -359,7 +393,7 @@ int32_t initCtxRelationFunc() {
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t doGeosRelation(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doGeosRelation(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                        bool swapped, char *res, _geosRelationFunc_t relationFn, _geosRelationFunc_t swappedRelationFn,
                        _geosPreparedRelationFunc_t preparedRelationFn,
                        _geosPreparedRelationFunc_t swappedPreparedRelationFn) {
@@ -367,82 +401,82 @@ int32_t doGeosRelation(const GEOSGeometry *geom1, const GEOSPreparedGeometry *pr
 
   TAOS_CHECK_RETURN(getThreadLocalGeosCtx(&geosCtx));
 
-  if (!preparedGeom1) {
+  if (!preparedGeom1 || !preparedGeom1->geom) {
     if (!swapped) {
       if (!relationFn) {
         return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
       }
-      *res = relationFn(geosCtx->handle, geom1, geom2);
+      *res = relationFn(geosCtx->handle, geom1->geom, geom2->geom);
     } else {
       if (!swappedRelationFn) {
         return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
       }
-      *res = swappedRelationFn(geosCtx->handle, geom1, geom2);
+      *res = swappedRelationFn(geosCtx->handle, geom1->geom, geom2->geom);
     }
   } else {
     if (!swapped) {
       if (!preparedRelationFn) {
         return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
       }
-      *res = preparedRelationFn(geosCtx->handle, preparedGeom1, geom2);
+      *res = preparedRelationFn(geosCtx->handle, preparedGeom1->geom, geom2->geom);
     } else {
       if (!swappedPreparedRelationFn) {
         return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
       }
-      *res = swappedPreparedRelationFn(geosCtx->handle, preparedGeom1, geom2);
+      *res = swappedPreparedRelationFn(geosCtx->handle, preparedGeom1->geom, geom2->geom);
     }
   }
 
   return TSDB_CODE_SUCCESS;
 }
 
-int32_t doIntersects(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doIntersects(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                      bool swapped, char *res) {
   return doGeosRelation(geom1, preparedGeom1, geom2, swapped, res, GEOSIntersects_r, GEOSIntersects_r,
                         GEOSPreparedIntersects_r, GEOSPreparedIntersects_r);
 }
 
-int32_t doEquals(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doEquals(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                  bool swapped, char *res) {
   return doGeosRelation(geom1, NULL, geom2, swapped, res, GEOSEquals_r, GEOSEquals_r, NULL,
                         NULL);  // no prepared version for eguals()
 }
 
-int32_t doTouches(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doTouches(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                   bool swapped, char *res) {
   return doGeosRelation(geom1, preparedGeom1, geom2, swapped, res, GEOSTouches_r, GEOSTouches_r, GEOSPreparedTouches_r,
                         GEOSPreparedTouches_r);
 }
 
-int32_t doCovers(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doCovers(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                  bool swapped, char *res) {
   return doGeosRelation(geom1, preparedGeom1, geom2, swapped, res, GEOSCovers_r, GEOSCoveredBy_r, GEOSPreparedCovers_r,
                         GEOSPreparedCoveredBy_r);
 }
 
-int32_t doContains(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1, const GEOSGeometry *geom2,
+int32_t doContains(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1, const TaosGeometry *geom2,
                    bool swapped, char *res) {
   return doGeosRelation(geom1, preparedGeom1, geom2, swapped, res, GEOSContains_r, GEOSWithin_r, GEOSPreparedContains_r,
                         GEOSPreparedWithin_r);
 }
 
-int32_t doContainsProperly(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1,
-                           const GEOSGeometry *geom2, bool swapped, char *res) {
+int32_t doContainsProperly(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1,
+                           const TaosGeometry *geom2, bool swapped, char *res) {
   return doGeosRelation(geom1, preparedGeom1, geom2, swapped, res, NULL, NULL, GEOSPreparedContainsProperly_r, NULL);
 }
 
 // input is with VARSTR format
 // need to call destroyGeometry(outputGeom, outputPreparedGeom) later
-int32_t readGeometry(const unsigned char *input, GEOSGeometry **outputGeom,
-                     const GEOSPreparedGeometry **outputPreparedGeom) {
+int32_t readGeometry(const unsigned char *input, TaosGeometry *outputGeom,
+                     TaosPreparedGeometry *outputPreparedGeom) {
   if (!outputGeom) {
     return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
   }
 
-  *outputGeom = NULL;
+  outputGeom->geom = NULL;
 
   if (outputPreparedGeom) {  // it means not to generate PreparedGeometry if outputPreparedGeom is NULL
-    *outputPreparedGeom = NULL;
+    outputPreparedGeom->geom = NULL;
   }
 
   if (varDataLen(input) == 0) {  // empty value
@@ -451,14 +485,14 @@ int32_t readGeometry(const unsigned char *input, GEOSGeometry **outputGeom,
 
   SGeosContext *geosCtx = NULL;
   TAOS_CHECK_RETURN(getThreadLocalGeosCtx(&geosCtx));
-  *outputGeom = GEOSWKBReader_read_r(geosCtx->handle, geosCtx->WKBReader, varDataVal(input), varDataLen(input));
-  if (*outputGeom == NULL) {
+  outputGeom->geom = GEOSWKBReader_read_r(geosCtx->handle, geosCtx->WKBReader, varDataVal(input), varDataLen(input));
+  if (outputGeom->geom == NULL) {
     return TSDB_CODE_FUNC_FUNTION_PARA_VALUE;
   }
 
   if (outputPreparedGeom) {
-    *outputPreparedGeom = GEOSPrepare_r(geosCtx->handle, *outputGeom);
-    if (*outputPreparedGeom == NULL) {
+    outputPreparedGeom->geom = GEOSPrepare_r(geosCtx->handle, outputGeom->geom);
+    if (outputPreparedGeom->geom == NULL) {
       return TSDB_CODE_FAILED;
     }
   }
@@ -466,18 +500,18 @@ int32_t readGeometry(const unsigned char *input, GEOSGeometry **outputGeom,
   return TSDB_CODE_SUCCESS;
 }
 
-void destroyGeometry(GEOSGeometry **geom, const GEOSPreparedGeometry **preparedGeom) {
+void destroyGeometry(TaosGeometry *geom, TaosPreparedGeometry *preparedGeom) {
   SGeosContext *geosCtx = acquireThreadLocalGeosCtx();
   if (!geosCtx) return;
 
-  if (preparedGeom && *preparedGeom) {
-    GEOSPreparedGeom_destroy_r(geosCtx->handle, *preparedGeom);
-    *preparedGeom = NULL;
+  if (preparedGeom && preparedGeom->geom) {
+    GEOSPreparedGeom_destroy_r(geosCtx->handle, preparedGeom->geom);
+    preparedGeom->geom = NULL;
   }
 
-  if (geom && *geom) {
-    GEOSGeom_destroy_r(geosCtx->handle, *geom);
-    *geom = NULL;
+  if (geom && geom->geom) {
+    GEOSGeom_destroy_r(geosCtx->handle, geom->geom);
+    geom->geom = NULL;
   }
 }
 #endif

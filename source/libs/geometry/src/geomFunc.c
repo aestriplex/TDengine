@@ -22,8 +22,8 @@
 #include "sclInt.h"
 #include "sclvector.h"
 
-typedef int32_t (*_geomDoRelationFunc_t)(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1,
-                                         const GEOSGeometry *geom2, bool swapped, char *res);
+typedef int32_t (*_geomDoRelationFunc_t)(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1,
+                                         const TaosGeometry *geom2, bool swapped, char *res);
 
 typedef int32_t (*_geomInitCtxFunc_t)();
 typedef int32_t (*_geomExecuteOneParamFunc_t)(SColumnInfoData *pInputData, int32_t i, SColumnInfoData *pOutputData);
@@ -192,12 +192,12 @@ _exit:
   return code;
 }
 
-int32_t executeRelationFunc(const GEOSGeometry *geom1, const GEOSPreparedGeometry *preparedGeom1,
-                            const GEOSGeometry *geom2, int32_t i, bool swapped, SColumnInfoData *pOutputData,
+int32_t executeRelationFunc(const TaosGeometry *geom1, const TaosPreparedGeometry *preparedGeom1,
+                            const TaosGeometry *geom2, int32_t i, bool swapped, SColumnInfoData *pOutputData,
                             _geomDoRelationFunc_t doRelationFn) {
   char res = 0;
 
-  if (!geom1 || !geom2) {  // if empty input value
+  if (!geom1 || !geom2 || !geom1->geom || !geom2->geom) {  // if empty input value
     res = -1;
   } else {
     TAOS_CHECK_RETURN(doRelationFn(geom1, preparedGeom1, geom2, swapped, &res));
@@ -306,9 +306,13 @@ int32_t geomRelationFunction(SScalarParam *pInput, SScalarParam *pOutput, bool s
     pInputData[1] = pInput[1].columnData;
   }
 
-  GEOSGeometry               *geom1 = NULL;
-  GEOSGeometry               *geom2 = NULL;
-  const GEOSPreparedGeometry *preparedGeom1 = NULL;
+  TaosGeometry               geom1;
+  TaosGeometry               geom2;
+  TaosPreparedGeometry preparedGeom1;
+
+  TAOS_CHECK_GOTO(defaultUnitTaosGeometry(&geom1),  NULL, _exit);
+  TAOS_CHECK_GOTO(defaultUnitTaosGeometry(&geom2),  NULL, _exit);
+  TAOS_CHECK_GOTO(defaultUnitTaosPreparedGeometry(&preparedGeom1),  NULL, _exit);
 
   // if there is constant, make PreparedGeometry from pInputData 0
   if (isConstant1) {
@@ -331,10 +335,10 @@ int32_t geomRelationFunction(SScalarParam *pInput, SScalarParam *pOutput, bool s
       TAOS_CHECK_GOTO(readGeometry(colDataGetData(pInputData[1], i), &geom2, NULL), NULL, _exit);
     }
 
-    TAOS_CHECK_GOTO(executeRelationFunc(geom1, preparedGeom1, geom2, i, swapped, pOutputData, doRelationFn), NULL,
+	TAOS_CHECK_GOTO(executeRelationFunc(&geom1, &preparedGeom1, &geom2, i, swapped, pOutputData, doRelationFn), NULL,
                     _exit);
 
-    if (!isConstant1) {
+	if (!isConstant1) {
       destroyGeometry(&geom1, &preparedGeom1);
     }
     if (!isConstant2) {
